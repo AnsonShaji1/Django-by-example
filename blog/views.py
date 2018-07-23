@@ -2,30 +2,38 @@ from django.shortcuts import render, get_object_or_404
 from .models import Post
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.views.generic import ListView
-from .forms import EmailPostForm
+from .forms import EmailPostForm, CommentForm
 from django.core.mail import send_mail
+
+from taggit.models import Tag
 # Create your views here.
 
 
 
-# def post_list(request):
-# 	object_list = Post.published.all()
-# 	paginator = Paginator(object_list, 3)
-# 	page = request.GET.get('page')
-# 	try:
-# 		posts = paginator.page(page)
-# 	except PageNotAnInteger:
-# 		posts = paginator.page(1)
-# 	except:
-# 		posts = paginator.page(paginator.num_pages)
-	
-# 	return render(request, 'blog/post/postlist.html', {'posts': posts, 'page': page})
+def post_list(request, tag_slug=None):
+	object_list = Post.published.all()
+	tag = None
 
-class PostListView(ListView):
-	queryset = Post.published.all()
-	context_object_name = 'posts'
-	paginated_by = 3
-	template_name = 'blog/post/postlist.html'
+	if tag_slug:
+		tag = get_object_or_404(Tag, slug=tag_slug)
+		object_list = object_list.filter(tags__in=[tag])
+
+	paginator = Paginator(object_list, 3)
+	page = request.GET.get('page')
+	try:
+		posts = paginator.page(page)
+	except PageNotAnInteger:
+		posts = paginator.page(1)
+	except:
+		posts = paginator.page(paginator.num_pages)
+	
+	return render(request, 'blog/post/postlist.html', {'posts': posts, 'page': page, 'tag': tag})
+
+# class PostListView(ListView):
+# 	queryset = Post.published.all()
+# 	context_object_name = 'posts'
+# 	paginated_by = 3
+# 	template_name = 'blog/post/postlist.html'
 
 
 def post_detail(request, year, month, day, post):
@@ -34,7 +42,32 @@ def post_detail(request, year, month, day, post):
                                    publish__year=year,
                                    publish__month=month,
                                    publish__day=day)
-    return render(request, 'blog/post/detail.html', {'post': post})
+
+    comments = post.comments.all().filter(active=True)
+    sent = False
+
+
+    if request.method == 'POST':
+    	comment_form = CommentForm(data=request.POST)
+    	if comment_form.is_valid():
+    		new_comment = comment_form.save(commit=False)
+    		new_comment.post = post
+    		new_comment.save()
+    		sent =True
+
+    else:
+    	comment_form = CommentForm()
+
+    # list of similar post
+    post_tags_ids = post.tags.values_list('id', flat=True)
+    similar_posts = post.published.filter(tags__in=post_tags_ids).exclude(id=post.id)
+
+
+    return render(request, 'blog/post/detail.html', {'post': post, 
+    												 'comments': comments,
+    												 'comment_form': comment_form,
+    												 'sent': sent,
+    												 'similar_posts': similar_posts})
 
 
 
